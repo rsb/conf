@@ -80,7 +80,6 @@ func Fields(spec interface{}, prefixParam ...string) ([]Field, error) {
 		}
 
 		for field.Kind() == reflect.Ptr {
-			fmt.Println("I am a pointer")
 			if field.IsNil() {
 				if field.Type().Elem().Kind() != reflect.Struct {
 					// nil pointer to a non-struct: leave it alone
@@ -94,7 +93,6 @@ func Fields(spec interface{}, prefixParam ...string) ([]Field, error) {
 
 		switch {
 		case field.Kind() == reflect.Struct:
-			fmt.Println("field is reflect.Struct")
 			if DecoderFrom(field) == nil &&
 				SetterFrom(field) == nil &&
 				TextUnmarshaler(field) == nil &&

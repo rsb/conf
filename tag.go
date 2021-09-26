@@ -7,7 +7,7 @@ import (
 )
 
 // Tag represents the annotated tag `conf` used to control how we will
-// parse that struct's configuration property.
+// parse that config's property.
 type Tag struct {
 	EnvVar    string
 	Default   string
