@@ -14,7 +14,6 @@ var (
 
 // Field holds information about the current configuration variable
 type Field struct {
-	ParentStruct string
 	Prefix       string
 	Name         string
 	EnvName      string
@@ -63,7 +62,7 @@ func Fields(spec interface{}, prefixParam ...string) ([]Field, error) {
 
 	specType := s.Type()
 	configName := specType.Name()
-
+	fmt.Println("-->", configName, "<--")
 	fields := make([]Field, 0, s.NumField())
 	for i := 0; i < s.NumField(); i++ {
 		field := s.Field(i)
@@ -108,7 +107,6 @@ func Fields(spec interface{}, prefixParam ...string) ([]Field, error) {
 		default:
 			// capture info about the config variable
 			data := Field{
-				ParentStruct: configName,
 				Name:         ftype.Name,
 				Prefix:       prefix,
 				ReflectValue: field,
