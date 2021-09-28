@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/rsb/failure"
@@ -49,7 +50,16 @@ func ParseTag(t string) (Tag, error) {
 			switch property {
 			case "default":
 				tag.IsDefault = true
+				if isDefaultValueMapOrList(value) {
+					var err error
+					value, err = normalizeDefaultValueMapOrList(value)
+					if err != nil {
+						return tag, failure.Wrap(err, "normalizeDefaultValueMapOrList failed")
+					}
+				}
+
 				tag.Default = value
+
 			case "env":
 				tag.EnvVar = value
 			}
@@ -57,4 +67,27 @@ func ParseTag(t string) (Tag, error) {
 	}
 
 	return tag, nil
+}
+
+func isDefaultValueMapOrList(value string) bool {
+	return strings.Contains(value, "map(") ||
+		strings.Contains(value, "list(")
+}
+
+func normalizeDefaultValueMapOrList(value string) (string, error) {
+	lastChar := value[len(value)-1:]
+	if lastChar != ")" {
+		return "", failure.Config("tag (default) invalid list or map syntax")
+	}
+
+	re := regexp.MustCompile(`\((.*?)\)`)
+	matches := re.FindAllString(value, -1)
+	for _, elem := range matches {
+		elem = strings.Trim(elem, "(")
+		elem = strings.Trim(elem, ")")
+		value = elem
+	}
+	value = strings.Replace(value, "|", ":", -1)
+	value = strings.Replace(value, ";", ",", -1)
+	return value, nil
 }

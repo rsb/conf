@@ -32,6 +32,10 @@ type Field struct {
 	Tag          Tag
 }
 
+func (f Field) PropertyName() string {
+	return f.Name
+}
+
 func (f Field) EnvVar() string {
 	return f.envVar
 }
@@ -143,6 +147,7 @@ func Fields(spec interface{}, prefixParam ...string) ([]Field, error) {
 
 func ProcessField(value string, field reflect.Value) error {
 	typ := field.Type()
+
 	if decoder := DecoderFrom(field); decoder != nil {
 		if err := decoder.Decode(value); err != nil {
 			return failure.ToSystem(err, "decoder.Decode failed (%s)", value)
@@ -187,6 +192,7 @@ func ProcessField(value string, field reflect.Value) error {
 		var val int64
 		var err error
 		if field.Kind() == reflect.Int64 && typ.PkgPath() == "time" && typ.Name() == "Duration" {
+
 			var d time.Duration
 			d, err = time.ParseDuration(value)
 			if err != nil {

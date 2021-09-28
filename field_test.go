@@ -3,42 +3,14 @@ package conf_test
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/k0kubun/pp"
+
 	"github.com/rsb/conf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestField_EnvKey(t *testing.T) {
-	tests := []struct {
-		name     string
-		field    conf.Field
-		expected string
-	}{
-		{
-			name: "no prefix",
-			field: conf.Field{
-				EnvKey: []string{"FOO", "BAR"},
-			},
-			expected: "FOO_BAR",
-		},
-		{
-			name: "with prefix",
-			field: conf.Field{
-				EnvKey: []string{"FOO", "BAR"},
-			},
-			expected: "APP_NAME_FOO_BAR",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.field.EnvVar()
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
 
 func TestField_DefaultValue(t *testing.T) {
 	tests := []struct {
@@ -118,66 +90,37 @@ func TestFields_AllIgnores(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-func TestFields_PtrToNonStructDoNothing(t *testing.T) {
-	type ConfigDoNothing struct {
-		Foo *bool `conf:"env:BAR"`
-	}
+/*
+env:aaa; default:a,b,c,d; xyx;
+*/
+func TestTextUnmarshaler(t *testing.T) {
 
-	var config ConfigDoNothing
+	config := struct {
+		TimeValue time.Time
+	}{}
 
-	result, err := conf.Fields(&config, "MY_APP")
-	require.NoError(t, err, "config.Fields is not expected to fail")
-	assert.Equal(t, 1, len(result))
+	timeValue := "2016-08-16T18:57:05Z"
 
-	tag := conf.Tag{EnvVar: "BAR"}
-	field := result[0]
-	testField(t, result[0], "MY_APP", tag)
+	field := reflect.ValueOf(&config).Elem().Field(0)
 
-	rv := reflect.ValueOf(&config)
-	testFieldReflect(t, rv, field, 0)
+	tu := conf.TextUnmarshaler(field)
+	require.NotNil(t, tu)
+
+	err := tu.UnmarshalText([]byte(timeValue))
+	require.NoError(t, err, "tu.UnmarshalText is not expected to fail")
+
+	var expected time.Time
+	err = expected.UnmarshalText([]byte(timeValue))
+	assert.Equal(t, expected, config.TimeValue)
 }
 
-func TestFields_PtrToStruct(t *testing.T) {
-	type Config struct {
-		Web struct {
-			Foo string `conf:"env:FOO"`
-		}
-	}
+func TestFields_MapWithDefault(t *testing.T) {
+	config := struct {
+		MyMap map[string]string `conf:"default:map(a;b;c;d),required"`
+	}{}
 
-	var config Config
+	fields, err := conf.Fields(&config)
 
-	result, err := conf.Fields(&config, "MY_APP")
-	require.NoError(t, err, "config.Fields is not expected to fail")
-	assert.Equal(t, 1, len(result))
-
-	tag := conf.Tag{EnvVar: "FOO"}
-	field := result[0]
-	testField(t, result[0], "MY_APP", tag)
-
-	rv := reflect.ValueOf(&config.Web)
-	testFieldReflect(t, rv, field, 0)
-
-	pp.Println(result)
-}
-
-func testField(t *testing.T, f conf.Field, prefix string, tag conf.Tag) {
-	t.Helper()
-
-	assert.Equal(t, tag, f.Tag)
-
-}
-func testFieldReflect(t *testing.T, rv reflect.Value, field conf.Field, fieldNbr int) {
-	t.Helper()
-	require.Equal(t, rv.Kind(), reflect.Ptr)
-
-	rv = rv.Elem()
-	require.Equal(t, rv.Kind(), reflect.Struct)
-
-	rvType := rv.Type()
-	f := rv.Field(fieldNbr)
-	ftype := rvType.Field(fieldNbr)
-
-	assert.Equal(t, ftype.Name, field.Name)
-	assert.Equal(t, ftype.Tag, field.ReflectTag)
-	assert.Equal(t, f, field.ReflectValue)
+	require.NoError(t, err)
+	pp.Println(fields)
 }

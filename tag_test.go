@@ -110,6 +110,45 @@ func TestParseTag_Success(t *testing.T) {
 				Mask:      true,
 			},
 		},
+		{
+			name: "default map",
+			tag:  "env:FOO_BAR,default:map(keyA|valueA;keyB|valueB),no-print,mask,no-prefix,required",
+			expected: conf.Tag{
+				EnvVar:    "FOO_BAR",
+				Default:   "keyA:valueA,keyB:valueB",
+				IsDefault: true,
+				NoPrint:   true,
+				NoPrefix:  true,
+				Required:  true,
+				Mask:      true,
+			},
+		},
+		{
+			name: "default map spaces are not manipulated",
+			tag:  "env:FOO_BAR,default:map(keyA|valueA;   keyB|valueB),no-print,mask,no-prefix,required",
+			expected: conf.Tag{
+				EnvVar:    "FOO_BAR",
+				Default:   "keyA:valueA,   keyB:valueB",
+				IsDefault: true,
+				NoPrint:   true,
+				NoPrefix:  true,
+				Required:  true,
+				Mask:      true,
+			},
+		},
+		{
+			name: "default list",
+			tag:  "env:FOO_BAR,default:list(a;b;c;d),no-print,mask,no-prefix,required",
+			expected: conf.Tag{
+				EnvVar:    "FOO_BAR",
+				Default:   "a,b,c,d",
+				IsDefault: true,
+				NoPrint:   true,
+				NoPrefix:  true,
+				Required:  true,
+				Mask:      true,
+			},
+		},
 	}
 
 	for _, tt := range tests {

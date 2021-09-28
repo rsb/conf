@@ -7,14 +7,12 @@ package conf
 import (
 	"os"
 
-	"github.com/k0kubun/pp"
-
 	"github.com/rsb/failure"
 )
 
 func ProcessEnv(spec interface{}, prefix ...string) error {
 	fields, err := Fields(spec, prefix...)
-	pp.Println(fields)
+	//pp.Println(fields)
 	if err != nil {
 		return failure.Wrap(err, "Fields failed")
 	}
