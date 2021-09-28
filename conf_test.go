@@ -131,6 +131,18 @@ func TestProcessEnv(t *testing.T) {
 	assert.Equal(t, u, s.UrlPointer.Value)
 }
 
+func TestProcessEnv_CamelCaseSplitUpperToLowerCase(t *testing.T) {
+	config := struct {
+		FOOBar string
+	}{}
+
+	os.Clearenv()
+	setenv(t, "FOO_BAR", "foobar")
+	err := conf.ProcessEnv(&config)
+	require.NoError(t, err)
+	assert.Equal(t, "foobar", config.FOOBar)
+}
+
 func TestProcessEnv_ParseBoolFailure(t *testing.T) {
 	var s Specification
 	os.Clearenv()
