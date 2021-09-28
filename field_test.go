@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/k0kubun/pp"
-
 	"github.com/rsb/conf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -112,15 +110,4 @@ func TestTextUnmarshaler(t *testing.T) {
 	var expected time.Time
 	err = expected.UnmarshalText([]byte(timeValue))
 	assert.Equal(t, expected, config.TimeValue)
-}
-
-func TestFields_MapWithDefault(t *testing.T) {
-	config := struct {
-		MyMap map[string]string `conf:"default:map(a;b;c;d),required"`
-	}{}
-
-	fields, err := conf.Fields(&config)
-
-	require.NoError(t, err)
-	pp.Println(fields)
 }

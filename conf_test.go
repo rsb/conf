@@ -16,7 +16,7 @@ type HonorDecodeInStruct struct {
 	Value string
 }
 
-func (h *HonorDecodeInStruct) Decode(env string) error {
+func (h *HonorDecodeInStruct) Decode(_ string) error {
 	h.Value = "decoded"
 	return nil
 }
@@ -80,26 +80,26 @@ type EmbeddedButIgnored struct {
 func TestProcessEnv(t *testing.T) {
 	var s Specification
 	os.Clearenv()
-	os.Setenv("ENV_DEBUG", "true")
-	os.Setenv("ENV_PORT", "8080")
-	os.Setenv("ENV_RATE", "0.5")
-	os.Setenv("ENV_USER", "rsb")
-	os.Setenv("ENV_TIMEOUT", "2m")
-	os.Setenv("ENV_ADMIN_USERS", "John,Adam,Will")
-	os.Setenv("ENV_MAGIC_NUMBERS", "3,5,10,20")
-	os.Setenv("ENV_EMPTY_NUMBERS", "")
-	os.Setenv("ENV_BYTE_SLICE", "this is a test value")
-	os.Setenv("ENV_COLOR_CODES", "red:1,green:2,blue:3")
-	os.Setenv("SERVICE_HOST", "127.0.0.1")
-	os.Setenv("ENV_TTL", "30")
-	os.Setenv("ENV_REQUIRED_VAR", "foo")
-	os.Setenv("ENV_IGNORED", "was-not-ignored")
-	os.Setenv("ENV_NESTED_SPECIFICATION_PROPERTY", "i_am_nested")
-	os.Setenv("ENV_AFTER_NESTED", "after")
-	os.Setenv("ENV_HONOR", "honor")
-	os.Setenv("ENV_DATETIME", "2016-08-16T18:57:05Z")
-	os.Setenv("ENV_URL_VALUE", "https://google.com")
-	os.Setenv("ENV_URL_POINTER", "https://google.com")
+	setenv(t, "ENV_DEBUG", "true")
+	setenv(t, "ENV_PORT", "8080")
+	setenv(t, "ENV_RATE", "0.5")
+	setenv(t, "ENV_USER", "rsb")
+	setenv(t, "ENV_TIMEOUT", "2m")
+	setenv(t, "ENV_ADMIN_USERS", "John,Adam,Will")
+	setenv(t, "ENV_MAGIC_NUMBERS", "3,5,10,20")
+	setenv(t, "ENV_EMPTY_NUMBERS", "")
+	setenv(t, "ENV_BYTE_SLICE", "this is a test value")
+	setenv(t, "ENV_COLOR_CODES", "red:1,green:2,blue:3")
+	setenv(t, "SERVICE_HOST", "127.0.0.1")
+	setenv(t, "ENV_TTL", "30")
+	setenv(t, "ENV_REQUIRED_VAR", "foo")
+	setenv(t, "ENV_IGNORED", "was-not-ignored")
+	setenv(t, "ENV_NESTED_SPECIFICATION_PROPERTY", "i_am_nested")
+	setenv(t, "ENV_AFTER_NESTED", "after")
+	setenv(t, "ENV_HONOR", "honor")
+	setenv(t, "ENV_DATETIME", "2016-08-16T18:57:05Z")
+	setenv(t, "ENV_URL_VALUE", "https://google.com")
+	setenv(t, "ENV_URL_POINTER", "https://google.com")
 	err := conf.ProcessEnv(&s, "env")
 	require.NoError(t, err)
 
@@ -129,4 +129,66 @@ func TestProcessEnv(t *testing.T) {
 	require.NoError(t, err, "url.Parse is not expected to fail")
 	assert.Equal(t, u, s.UrlValue.Value)
 	assert.Equal(t, u, s.UrlPointer.Value)
+}
+
+func TestProcessEnv_ParseBoolFailure(t *testing.T) {
+	var s Specification
+	os.Clearenv()
+	setenv(t, "DEBUG", "string")
+	setenv(t, "REQUIRED_VAR", "foo")
+	err := conf.ProcessEnv(&s)
+	require.Error(t, err, "conf.ProcessEnv is expected to fail")
+
+	assert.Contains(t, err.Error(), "ProcessField failed (Debug)")
+	assert.Contains(t, err.Error(), "strconv.ParseBool failed")
+}
+
+func TestProcessEnv_ParseFloatFailure(t *testing.T) {
+	var s Specification
+	os.Clearenv()
+	setenv(t, "RATE", "string")
+	setenv(t, "REQUIRED_VAR", "foo")
+	err := conf.ProcessEnv(&s)
+	require.Error(t, err, "conf.ProcessEnv is expected to fail")
+
+	assert.Contains(t, err.Error(), "ProcessField failed (Rate)")
+	assert.Contains(t, err.Error(), "strconv.ParseFloat failed")
+}
+
+func TestProcessEnv_ParseUIntFailure(t *testing.T) {
+	var s Specification
+	os.Clearenv()
+	setenv(t, "TTL", "-30")
+	setenv(t, "REQUIRED_VAR", "foo")
+	err := conf.ProcessEnv(&s)
+	require.Error(t, err, "conf.ProcessEnv is expected to fail")
+
+	assert.Contains(t, err.Error(), "ProcessField failed (TTL)")
+	assert.Contains(t, err.Error(), "strconv.ParseUint failed")
+}
+
+func TestProcessEnv_RequiredFailure(t *testing.T) {
+	var s Specification
+	os.Clearenv()
+	err := conf.ProcessEnv(&s)
+	require.Error(t, err, "conf.ProcessEnv is expected to fail")
+
+	assert.Contains(t, err.Error(), "required key (RequiredVar,REQUIRED_VAR) missing value")
+}
+
+func TestProcessEnv_InvalidSpecFailure(t *testing.T) {
+	config := struct {
+		Foo string `conf:"default:map(ab,d, required"`
+	}{}
+
+	os.Clearenv()
+	err := conf.ProcessEnv(&config)
+	require.Error(t, err, "conf.ProcessEnv is expected to fail")
+
+	assert.Contains(t, err.Error(), "Fields failed")
+	assert.Contains(t, err.Error(), "parseTag failed (Foo)")
+}
+
+func setenv(t *testing.T, key, value string) {
+	require.NoError(t, os.Setenv(key, value))
 }
