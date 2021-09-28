@@ -7,8 +7,50 @@ package conf
 import (
 	"os"
 
+	"github.com/k0kubun/pp"
+
 	"github.com/rsb/failure"
 )
+
+func ProcessEnv(spec interface{}, prefix ...string) error {
+	fields, err := Fields(spec, prefix...)
+	pp.Println(fields)
+	if err != nil {
+		return failure.Wrap(err, "Fields failed")
+	}
+
+	for _, field := range fields {
+		value, ok := os.LookupEnv(field.EnvVar())
+		if !ok && field.IsDefault() {
+			value = field.DefaultValue()
+		}
+
+		if !ok && !field.IsDefault() {
+			if field.IsRequired() {
+				return failure.Config("required key (%s,%s) missing value", field.Name, field.EnvVar())
+			}
+			continue
+		}
+
+		if err = ProcessField(value, field.ReflectValue); err != nil {
+			return failure.Wrap(err, "ProcessField failed")
+		}
+	}
+
+	return nil
+}
+
+func HandleUnsetEnvVar(field Field) (string, error) {
+	if field.IsDefault() {
+		return field.DefaultValue(), nil
+	}
+
+	if !field.IsRequired() {
+		return "", nil
+	}
+
+	return "", failure.Config("required key (%s) missing value", field.EnvVar())
+}
 
 // EnvVar ensures the variable you are looking for is set. If you don't care
 // about that use EnvVarOptional instead

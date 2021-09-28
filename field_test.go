@@ -19,15 +19,14 @@ func TestField_EnvKey(t *testing.T) {
 		{
 			name: "no prefix",
 			field: conf.Field{
-				EnvName: "FOO_BAR",
+				EnvKey: []string{"FOO", "BAR"},
 			},
 			expected: "FOO_BAR",
 		},
 		{
 			name: "with prefix",
 			field: conf.Field{
-				Prefix:  "APP_NAME",
-				EnvName: "FOO_BAR",
+				EnvKey: []string{"FOO", "BAR"},
 			},
 			expected: "APP_NAME_FOO_BAR",
 		},
@@ -35,7 +34,7 @@ func TestField_EnvKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.field.EnvKey()
+			result := tt.field.EnvVar()
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -164,7 +163,6 @@ func TestFields_PtrToStruct(t *testing.T) {
 func testField(t *testing.T, f conf.Field, prefix string, tag conf.Tag) {
 	t.Helper()
 
-	assert.Equal(t, prefix, f.Prefix)
 	assert.Equal(t, tag, f.Tag)
 
 }

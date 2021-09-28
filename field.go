@@ -2,10 +2,20 @@ package conf
 
 import (
 	"encoding"
-	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
 
 	"github.com/rsb/failure"
+)
+
+const (
+	classLower int = iota
+	classUpper
+	classNumber
+	classOther
 )
 
 var (
@@ -14,21 +24,16 @@ var (
 
 // Field holds information about the current configuration variable
 type Field struct {
-	Prefix       string
 	Name         string
-	EnvName      string
+	EnvKey       []string
+	envVar       string
 	ReflectValue reflect.Value
 	ReflectTag   reflect.StructTag
 	Tag          Tag
 }
 
-func (f Field) EnvKey() string {
-	key := f.EnvName
-	if f.Prefix != "" {
-		key = fmt.Sprintf("%s_%s", f.Prefix, key)
-	}
-
-	return key
+func (f Field) EnvVar() string {
+	return f.envVar
 }
 
 func (f Field) IsRequired() bool {
@@ -44,80 +49,264 @@ func (f Field) DefaultValue() string {
 }
 
 func Fields(spec interface{}, prefixParam ...string) ([]Field, error) {
-	var prefix string
+	var prefix []string
+	var fields []Field
 	s := reflect.ValueOf(spec)
 
 	if s.Kind() != reflect.Ptr {
-		return nil, InvalidSpecFailure
+		return fields, InvalidSpecFailure
 	}
 
 	s = s.Elem()
 	if s.Kind() != reflect.Struct {
-		return nil, InvalidSpecFailure
+		return fields, InvalidSpecFailure
 	}
 
 	if len(prefixParam) > 0 {
-		prefix = prefixParam[0]
+		prefix = prefixParam
 	}
 
 	specType := s.Type()
-	configName := specType.Name()
-	fmt.Println("-->", configName, "<--")
-	fields := make([]Field, 0, s.NumField())
+
 	for i := 0; i < s.NumField(); i++ {
-		field := s.Field(i)
+		f := s.Field(i)
 		ftype := specType.Field(i)
 
 		confTags := ftype.Tag.Get("conf")
-		if !field.CanSet() || confTags == "-" {
+		if !f.CanSet() || confTags == "-" {
 			continue
 		}
 
+		fieldName := ftype.Name
+
 		fieldOpts, err := ParseTag(confTags)
 		if err != nil {
-			return fields, failure.Wrap(err, "parseTag failed")
+			return fields, failure.Wrap(err, "parseTag failed (%s)", fieldName)
 		}
 
-		for field.Kind() == reflect.Ptr {
-			if field.IsNil() {
-				if field.Type().Elem().Kind() != reflect.Struct {
+		// Generate the field key. This could be ignored.
+		fieldKey := append(prefix, CamelSplit(fieldName)...)
+		for f.Kind() == reflect.Ptr {
+			if f.IsNil() {
+				if f.Type().Elem().Kind() != reflect.Struct {
 					// nil pointer to a non-struct: leave it alone
 					break
 				}
 				// nil pointer to a struct: create a zero instance
-				field.Set(reflect.New(field.Type().Elem()))
+				f.Set(reflect.New(f.Type().Elem()))
 			}
-			field = field.Elem()
+			f = f.Elem()
 		}
 
-		switch {
-		case field.Kind() == reflect.Struct:
-			if DecoderFrom(field) == nil &&
-				SetterFrom(field) == nil &&
-				TextUnmarshaler(field) == nil &&
-				BinaryUnmarshaler(field) == nil {
+		envKey := fieldKey
+		if fieldOpts.EnvVar != "" {
+			if fieldOpts.NoPrefix {
+				envKey = strings.Split(fieldOpts.EnvVar, "_")
+			} else {
+				envPrefix := envKey[0]
+				tmp := strings.Split(fieldOpts.EnvVar, "_")
+				envKey = append([]string{envPrefix}, tmp...)
+			}
+		}
 
-				embeddedPtr := field.Addr().Interface()
-				innerFields, err := Fields(embeddedPtr, prefixParam...)
+		// capture info about the config variable
+		data := Field{
+			Name:         fieldName,
+			EnvKey:       envKey,
+			envVar:       strings.ToUpper(strings.Join(envKey, "_")),
+			ReflectValue: f,
+			ReflectTag:   ftype.Tag,
+			Tag:          fieldOpts,
+		}
+		fields = append(fields, data)
+
+		if f.Kind() == reflect.Struct {
+
+			if DecoderFrom(f) == nil &&
+				SetterFrom(f) == nil &&
+				TextUnmarshaler(f) == nil &&
+				BinaryUnmarshaler(f) == nil {
+
+				innerPrefix := fieldKey
+				embeddedPtr := f.Addr().Interface()
+				innerFields, err := Fields(embeddedPtr, innerPrefix...)
 				if err != nil {
 					return fields, failure.Wrap(err, "Collect failed for embedded struct")
 				}
 				fields = append(fields, innerFields...)
 			}
-		default:
-			// capture info about the config variable
-			data := Field{
-				Name:         ftype.Name,
-				Prefix:       prefix,
-				ReflectValue: field,
-				ReflectTag:   ftype.Tag,
-				Tag:          fieldOpts,
-			}
-			fields = append(fields, data)
 		}
 	}
 
 	return fields, nil
+}
+
+func ProcessField(value string, field reflect.Value) error {
+	typ := field.Type()
+	if decoder := DecoderFrom(field); decoder != nil {
+		if err := decoder.Decode(value); err != nil {
+			return failure.ToSystem(err, "decoder.Decode failed (%s)", value)
+		}
+		return nil
+	}
+
+	// look for Set method if Decode is not defined
+	if setter := SetterFrom(field); setter != nil {
+		if err := setter.Set(value); err != nil {
+			return failure.ToSystem(err, "setter.Set failed (%s)", value)
+		}
+		return nil
+	}
+
+	if t := TextUnmarshaler(field); t != nil {
+		if err := t.UnmarshalText([]byte(value)); err != nil {
+			return failure.ToSystem(err, "t.UnmarshalText failed (%s)", value)
+		}
+		return nil
+	}
+
+	if b := BinaryUnmarshaler(field); b != nil {
+		if err := b.UnmarshalBinary([]byte(value)); err != nil {
+			return failure.ToSystem(err, "b.UnmarshalBinary failed (%s)", value)
+		}
+		return nil
+	}
+
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+		if field.IsNil() {
+			field.Set(reflect.New(typ))
+		}
+		field = field.Elem()
+	}
+
+	switch typ.Kind() {
+	case reflect.String:
+		field.SetString(value)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		var val int64
+		var err error
+		if field.Kind() == reflect.Int64 && typ.PkgPath() == "time" && typ.Name() == "Duration" {
+			var d time.Duration
+			d, err = time.ParseDuration(value)
+			if err != nil {
+				return failure.ToSystem(err, "time.Duration failed, failed to parse int")
+			}
+			val = int64(d)
+		} else {
+			val, err = strconv.ParseInt(value, 0, typ.Bits())
+			if err != nil {
+				return failure.ToSystem(err, "strconv.ParseInt failed")
+			}
+		}
+		field.SetInt(val)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		val, err := strconv.ParseUint(value, 0, typ.Bits())
+		if err != nil {
+			return failure.ToSystem(err, "strconv.ParseUint failed")
+		}
+		field.SetUint(val)
+
+	case reflect.Bool:
+		val, err := strconv.ParseBool(value)
+		if err != nil {
+			return failure.ToSystem(err, "strconv.ParseBool failed")
+		}
+		field.SetBool(val)
+
+	case reflect.Float64, reflect.Float32:
+		val, err := strconv.ParseFloat(value, typ.Bits())
+		if err != nil {
+			return failure.ToSystem(err, "strconv.ParseFloat failed")
+		}
+		field.SetFloat(val)
+	case reflect.Slice:
+		sl := reflect.MakeSlice(typ, 0, 0)
+		if typ.Elem().Kind() == reflect.Uint8 {
+			sl = reflect.ValueOf([]byte(value))
+		} else if len(strings.TrimSpace(value)) != 0 {
+			vals := strings.Split(value, ",")
+			sl = reflect.MakeSlice(typ, len(vals), len(vals))
+			for i, val := range vals {
+				err := ProcessField(val, sl.Index(i))
+				if err != nil {
+					return failure.Wrap(err, "processField failed at (%d)", i)
+				}
+			}
+		}
+		field.Set(sl)
+	case reflect.Map:
+		mp := reflect.MakeMap(typ)
+		if len(strings.TrimSpace(value)) != 0 {
+			pairs := strings.Split(value, ",")
+			for _, pair := range pairs {
+				kvpair := strings.Split(pair, ":")
+				if len(kvpair) != 2 {
+					return failure.System("invalid map item: (pair: %q)", pair)
+				}
+
+				k := reflect.New(typ.Key()).Elem()
+				err := ProcessField(kvpair[0], k)
+				if err != nil {
+					return failure.Wrap(err, "processField failed for key (pair: %q) ", pair)
+				}
+				v := reflect.New(typ.Elem()).Elem()
+				err = ProcessField(kvpair[1], v)
+				if err != nil {
+					return failure.Wrap(err, "processField failed for value (pair: %q)", pair)
+				}
+				mp.SetMapIndex(k, v)
+			}
+		}
+		field.Set(mp)
+	}
+
+	return nil
+}
+
+// CamelSplit takes a string based on a camel case and splits it.
+func CamelSplit(src string) []string {
+	if src == "" {
+		return []string{}
+	}
+
+	if len(src) < 2 {
+		return []string{src}
+	}
+
+	runes := []rune(src)
+
+	lastClass := charClass(runes[0])
+	lastIdx := 0
+	var out []string
+
+	for i, r := range runes {
+		class := charClass(r)
+
+		// If class has transitioned.
+		if class != lastClass {
+			// If going from uppercase to lowercase, we want to retain the last
+			// uppercase letter for names like FOOBar, which should be split to
+			// FOO BAR
+			switch {
+			case lastClass == classUpper && class != classNumber:
+				if i-lastIdx > 1 {
+					out = append(out, string(runes[lastIdx:i-1]))
+					lastIdx = i - 1
+				}
+			default:
+				out = append(out, string(runes[lastIdx:i]))
+				lastIdx = i
+			}
+		}
+
+		if i == len(runes)-1 {
+			out = append(out, string(runes[lastIdx:]))
+		}
+		lastClass = class
+	}
+
+	return out
 }
 
 // Decoder has the same semantics as Setter, but takes higher precedence.
@@ -163,4 +352,21 @@ func TextUnmarshaler(field reflect.Value) (t encoding.TextUnmarshaler) {
 func BinaryUnmarshaler(field reflect.Value) (b encoding.BinaryUnmarshaler) {
 	interfaceFrom(field, func(v interface{}, ok *bool) { b, *ok = v.(encoding.BinaryUnmarshaler) })
 	return b
+}
+
+func charClass(r rune) int {
+	var result int
+
+	switch {
+	case unicode.IsLower(r):
+		result = classLower
+	case unicode.IsUpper(r):
+		result = classUpper
+	case unicode.IsDigit(r):
+		result = classNumber
+	default:
+		result = classOther
+	}
+
+	return result
 }
