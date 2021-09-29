@@ -23,7 +23,7 @@ export MYAPP_ID_LIST="id1,id2,id3"
 
 Define your config struct and use it to initialize your app
 
-```
+```go
 package main
 
 import(
