@@ -64,3 +64,18 @@ func EnvToMap(spec interface{}, prefix ...string) (map[string]string, error) {
 
 	return result, nil
 }
+
+func EnvNames(spec interface{}, prefix ...string) ([]string, error) {
+	var names []string
+
+	fields, err := Fields(spec, prefix...)
+	if err != nil {
+		return nil, failure.Wrap(err, "Fields failed")
+	}
+
+	for _, field := range fields {
+		names = append(names, field.EnvVar())
+	}
+
+	return names, nil
+}

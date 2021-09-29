@@ -102,35 +102,9 @@ func Fields(spec interface{}, prefixParam ...string) ([]Field, error) {
 			f = f.Elem()
 		}
 
-		envKey := fieldKey
-		if fieldOpts.EnvVar != "" {
-			if fieldOpts.NoPrefix {
-				envKey = strings.Split(fieldOpts.EnvVar, "_")
-			} else {
-				envPrefix := envKey[0]
-				tmp := strings.Split(fieldOpts.EnvVar, "_")
-				envKey = append([]string{envPrefix}, tmp...)
-			}
-		}
-
-		// capture info about the config variable
-		data := Field{
-			Name:         fieldName,
-			EnvKey:       envKey,
-			envVar:       strings.ToUpper(strings.Join(envKey, "_")),
-			ReflectValue: f,
-			ReflectTag:   ftype.Tag,
-			Tag:          fieldOpts,
-		}
-		fields = append(fields, data)
-
-		if f.Kind() == reflect.Struct {
-
-			if DecoderFrom(f) == nil &&
-				SetterFrom(f) == nil &&
-				TextUnmarshaler(f) == nil &&
-				BinaryUnmarshaler(f) == nil {
-
+		switch {
+		case f.Kind() == reflect.Struct:
+			if DecoderFrom(f) == nil && SetterFrom(f) == nil && TextUnmarshaler(f) == nil && BinaryUnmarshaler(f) == nil {
 				innerPrefix := fieldKey
 				embeddedPtr := f.Addr().Interface()
 				innerFields, err := Fields(embeddedPtr, innerPrefix...)
@@ -138,13 +112,42 @@ func Fields(spec interface{}, prefixParam ...string) ([]Field, error) {
 					return fields, failure.Wrap(err, "Collect failed for embedded struct")
 				}
 				fields = append(fields, innerFields...)
+				continue
 			}
+			data := NewField(fieldName, fieldKey, f, ftype.Tag, fieldOpts)
+			fields = append(fields, data)
+
+		default:
+			data := NewField(fieldName, fieldKey, f, ftype.Tag, fieldOpts)
+			fields = append(fields, data)
 		}
+
 	}
 
 	return fields, nil
 }
 
+func NewField(name string, fieldKey []string, v reflect.Value, t reflect.StructTag, opts Tag) Field {
+	envKey := fieldKey
+	if opts.EnvVar != "" {
+		if opts.NoPrefix {
+			envKey = strings.Split(opts.EnvVar, "_")
+		} else {
+			envPrefix := envKey[0]
+			tmp := strings.Split(opts.EnvVar, "_")
+			envKey = append([]string{envPrefix}, tmp...)
+		}
+	}
+
+	return Field{
+		Name:         name,
+		EnvKey:       envKey,
+		envVar:       strings.ToUpper(strings.Join(envKey, "_")),
+		ReflectValue: v,
+		ReflectTag:   t,
+		Tag:          opts,
+	}
+}
 func ProcessField(value string, field reflect.Value) error {
 	typ := field.Type()
 

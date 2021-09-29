@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/k0kubun/pp"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -77,6 +75,25 @@ type Embedded struct {
 type EmbeddedButIgnored struct {
 	FirstEmbeddedButIgnored  string
 	SecondEmbeddedButIgnored string
+}
+
+type App struct {
+	API
+	DB
+}
+
+type API struct {
+	URL      string
+	Timeout  time.Duration
+	SomeDate time.Time
+}
+
+type DB struct {
+	Host string
+	Name string
+	User string
+	Port int
+	Pass string
 }
 
 func TestProcessEnv(t *testing.T) {
@@ -214,7 +231,95 @@ func TestEnvToMap_SuccessSingleStruct(t *testing.T) {
 
 	result, err := conf.EnvToMap(&config)
 	require.NoError(t, err)
-	pp.Println(result)
+
+	expected := map[string]string{
+		"VALUE_A": "foo",
+		"VALUE_B": "xyz",
+	}
+
+	assert.Equal(t, expected, result)
+}
+
+func TestEnvToMap_SuccessMultipleStructs(t *testing.T) {
+
+	apiURLKey := "API_URL"
+	apiURLValue := "some_url_string"
+
+	apiTimeoutKey := "API_TIMEOUT"
+	apiTimeoutValue := "5s"
+
+	apiDateKey := "API_SOME_DATE"
+	apiDateValue := "some-date"
+
+	dbNameKey := "DB_NAME"
+	dbNameValue := "db-name"
+	dbUserKey := "DB_USER"
+	dbUserValue := "db-user"
+	dbHostKey := "DB_HOST"
+	dbHostValue := "db-host"
+	dbPortKey := "DB_PORT"
+	dbPortValue := "5432"
+	dbPassKey := "DB_PASS"
+	dbPassValue := "password"
+
+	var config App
+	os.Clearenv()
+	setenv(t, apiURLKey, apiURLValue)
+	setenv(t, apiTimeoutKey, apiTimeoutValue)
+	setenv(t, apiDateKey, apiDateValue)
+
+	setenv(t, dbNameKey, dbNameValue)
+	setenv(t, dbUserKey, dbUserValue)
+	setenv(t, dbHostKey, dbHostValue)
+	setenv(t, dbPassKey, dbPassValue)
+	setenv(t, dbPortKey, dbPortValue)
+
+	result, err := conf.EnvToMap(&config)
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		apiURLKey:     apiURLValue,
+		apiTimeoutKey: apiTimeoutValue,
+		apiDateKey:    apiDateValue,
+		dbNameKey:     dbNameValue,
+		dbUserKey:     dbUserValue,
+		dbHostKey:     dbHostValue,
+		dbPortKey:     dbPortValue,
+		dbPassKey:     dbPassValue,
+	}
+
+	assert.Equal(t, expected, result)
+}
+
+func TestEnvNames_SuccessMultipleStructs(t *testing.T) {
+
+	apiURLKey := "API_URL"
+	apiTimeoutKey := "API_TIMEOUT"
+	apiDateKey := "API_SOME_DATE"
+	dbNameKey := "DB_NAME"
+	dbUserKey := "DB_USER"
+	dbHostKey := "DB_HOST"
+	dbPortKey := "DB_PORT"
+	dbPassKey := "DB_PASS"
+
+	var config App
+	os.Clearenv()
+
+	result, err := conf.EnvNames(&config)
+	require.NoError(t, err)
+
+	expected := []string{
+		apiURLKey,
+		apiTimeoutKey,
+		apiDateKey,
+		dbHostKey,
+		dbNameKey,
+		dbUserKey,
+		dbPortKey,
+		dbPassKey,
+	}
+
+	assert.Equal(t, expected, result)
 }
 
 func setenv(t *testing.T, key, value string) {
