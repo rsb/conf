@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/k0kubun/pp"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -199,6 +201,20 @@ func TestProcessEnv_InvalidSpecFailure(t *testing.T) {
 
 	assert.Contains(t, err.Error(), "Fields failed")
 	assert.Contains(t, err.Error(), "parseTag failed (Foo)")
+}
+
+func TestEnvToMap_SuccessSingleStruct(t *testing.T) {
+	config := struct {
+		ValueA string `conf:"default:foo"`
+		ValueB int
+	}{}
+
+	os.Clearenv()
+	setenv(t, "VALUE_B", "xyz")
+
+	result, err := conf.EnvToMap(&config)
+	require.NoError(t, err)
+	pp.Println(result)
 }
 
 func setenv(t *testing.T, key, value string) {

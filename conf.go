@@ -37,3 +37,30 @@ func ProcessEnv(spec interface{}, prefix ...string) error {
 
 	return nil
 }
+
+func EnvToMap(spec interface{}, prefix ...string) (map[string]string, error) {
+	fields, err := Fields(spec, prefix...)
+	if err != nil {
+		return nil, failure.Wrap(err, "Fields failed")
+	}
+
+	result := map[string]string{}
+	for _, field := range fields {
+		envVar := field.EnvVar()
+		value, ok := os.LookupEnv(envVar)
+		if !ok && field.IsDefault() {
+			value = field.DefaultValue()
+		}
+
+		if !ok && !field.IsDefault() {
+			if field.IsRequired() {
+				return result, failure.Config("required key (%s,%s) missing value", field.Name, field.EnvVar())
+			}
+			continue
+		}
+
+		result[envVar] = value
+	}
+
+	return result, nil
+}
