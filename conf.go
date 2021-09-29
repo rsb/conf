@@ -12,7 +12,6 @@ import (
 
 func ProcessEnv(spec interface{}, prefix ...string) error {
 	fields, err := Fields(spec, prefix...)
-	//pp.Println(fields)
 	if err != nil {
 		return failure.Wrap(err, "Fields failed")
 	}

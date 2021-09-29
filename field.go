@@ -114,6 +114,7 @@ func Fields(spec interface{}, prefixParam ...string) ([]Field, error) {
 				fields = append(fields, innerFields...)
 				continue
 			}
+
 			data := NewField(fieldName, fieldKey, f, ftype.Tag, fieldOpts)
 			fields = append(fields, data)
 
