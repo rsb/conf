@@ -8,15 +8,22 @@ import (
 )
 
 // Tag represents the annotated tag `conf` used to control how we will
-// parse that config's property.
+// parse that property.
 type Tag struct {
-	EnvVar    string
-	Default   string
-	IsDefault bool
-	NoPrint   bool
-	NoPrefix  bool
-	Required  bool
-	Mask      bool
+	EnvVar         string
+	CLIFlag        string
+	CLIShort       string
+	CLIUsage       string
+	PStoreVar      string
+	IsPStoreGlobal bool
+	Default        string
+	IsCLIPFlag     bool
+	IsDefault      bool
+	NoCLIBind      bool
+	NoPrint        bool
+	NoPrefix       bool
+	Required       bool
+	Mask           bool
 }
 
 func ParseTag(t string) (Tag, error) {
@@ -28,11 +35,15 @@ func ParseTag(t string) (Tag, error) {
 
 	parts := strings.Split(t, ",")
 	for _, part := range parts {
-		vals := strings.SplitN(part, ":", 2)
-		property := vals[0]
+		vals := strings.SplitN(strings.TrimSpace(part), ":", 2)
+		property := strings.TrimSpace(vals[0])
 		switch len(vals) {
 		case 1:
 			switch property {
+			case "global-flag":
+				tag.IsCLIPFlag = true
+			case "no-cli-bind":
+				tag.NoCLIBind = true
 			case "no-print":
 				tag.NoPrint = true
 			case "no-prefix":
@@ -41,9 +52,11 @@ func ParseTag(t string) (Tag, error) {
 				tag.Required = true
 			case "mask":
 				tag.Mask = true
+			case "pstore-global":
+				tag.IsPStoreGlobal = true
 			}
 		case 2:
-			value := strings.TrimSpace(vals[1])
+			value := vals[1]
 			if value == "" {
 				return tag, failure.Config("tag (%q) missing a value", property)
 			}
@@ -61,7 +74,15 @@ func ParseTag(t string) (Tag, error) {
 				tag.Default = value
 
 			case "env":
-				tag.EnvVar = value
+				tag.EnvVar = strings.TrimSpace(value)
+			case "cli":
+				tag.CLIFlag = strings.TrimSpace(value)
+			case "cli-s":
+				tag.CLIShort = strings.TrimSpace(value)
+			case "cli-u":
+				tag.CLIUsage = strings.TrimSpace(value)
+			case "pstore":
+				tag.PStoreVar = strings.TrimSpace(value)
 			}
 		}
 	}

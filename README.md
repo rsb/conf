@@ -38,7 +38,7 @@ import(
 type AppConfig struct {
 	SomeAPI
 	DB
-  Debug bool
+	Debug bool
   Codes map[string]string
 	IDList []string
 }

@@ -99,7 +99,37 @@ func TestParseTag_Success(t *testing.T) {
 		},
 		{
 			name: "all settings",
-			tag:  "env:FOO_BAR,default:XYZ,no-print,mask,no-prefix,required",
+			tag:  "env:FOO_BAR,pstore:xy/z/key,default:XYZ,no-print,mask,no-prefix,required,cli:foo,cli-s:f,cli-u:some usage",
+			expected: conf.Tag{
+				EnvVar:    "FOO_BAR",
+				PStoreVar: "xy/z/key",
+				CLIFlag:   "foo",
+				CLIShort:  "f",
+				CLIUsage:  "some usage",
+				Default:   "XYZ",
+				IsDefault: true,
+				NoPrint:   true,
+				NoPrefix:  true,
+				Required:  true,
+				Mask:      true,
+			},
+		},
+		{
+			name: "all settings with leading space",
+			tag:  "  env:FOO_BAR, default:XYZ, no-print,mask, no-prefix,    required",
+			expected: conf.Tag{
+				EnvVar:    "FOO_BAR",
+				Default:   "XYZ",
+				IsDefault: true,
+				NoPrint:   true,
+				NoPrefix:  true,
+				Required:  true,
+				Mask:      true,
+			},
+		},
+		{
+			name: "env with value that has a leading space",
+			tag:  "  env:      FOO_BAR, default:XYZ, no-print,mask, no-prefix,    required",
 			expected: conf.Tag{
 				EnvVar:    "FOO_BAR",
 				Default:   "XYZ",
@@ -147,6 +177,36 @@ func TestParseTag_Success(t *testing.T) {
 				NoPrefix:  true,
 				Required:  true,
 				Mask:      true,
+			},
+		},
+
+		{
+			name: "viper value",
+			tag:  "cli:foo-bar,default:some-value",
+			expected: conf.Tag{
+				CLIFlag:   "foo-bar",
+				Default:   "some-value",
+				IsDefault: true,
+			},
+		},
+		{
+			name: "parameter store value",
+			tag:  "pstore:foo-bar,default:some-value",
+			expected: conf.Tag{
+				PStoreVar: "foo-bar",
+				Default:   "some-value",
+				IsDefault: true,
+			},
+		},
+		{
+			name: "parameter store, env and viper value",
+			tag:  "pstore:foo-bar,default:some-value,cli:foo,env:FOO_BAR",
+			expected: conf.Tag{
+				EnvVar:    "FOO_BAR",
+				CLIFlag:   "foo",
+				PStoreVar: "foo-bar",
+				Default:   "some-value",
+				IsDefault: true,
 			},
 		},
 	}
