@@ -1,11 +1,10 @@
 package conf_test
 
 import (
-	"testing"
-
 	"github.com/rsb/conf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 func TestParseTag_Success(t *testing.T) {

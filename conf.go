@@ -11,9 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ssm"
-	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
 	"github.com/rsb/failure"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -35,49 +32,82 @@ var excludedVars = []string{
 }
 
 type Config struct {
-	Data interface{}
+	Data        interface{}
+	SkipDefault bool
+	Prefix      string
 }
 
-func NewConfig(d interface{}) *Config {
-	return &Config{Data: d}
+func NewConfig(d interface{}, prefixOpt ...string) *Config {
+	prefix := ""
+	if len(prefixOpt) > 0 && prefixOpt[0] != "" {
+		prefix = prefixOpt[0]
+	}
+	return &Config{Data: d, SkipDefault: true, Prefix: prefix}
 }
 
-func (c *Config) ProcessCLI(v *viper.Viper, prefix ...string) error {
-	if err := ProcessCLI(v, c.Data, prefix...); err != nil {
+func (c *Config) GetPrefix() string {
+	return c.Prefix
+}
+
+func (c *Config) SetPrefix(prefix string) {
+	c.Prefix = prefix
+}
+
+func (c *Config) IsPrefixEnabled() bool {
+	return c.Prefix != ""
+}
+
+func (c *Config) loadPrefix() []string {
+	if !c.IsPrefixEnabled() {
+		return []string{}
+	}
+
+	return []string{c.GetPrefix()}
+}
+
+func (c *Config) MarkDefaultsAsExcluded() {
+	c.SkipDefault = true
+}
+
+func (c *Config) MarkDefaultsAsIncluded() {
+	c.SkipDefault = false
+}
+
+func (c *Config) SetExcludeDefaults(value bool) {
+	c.SkipDefault = value
+}
+
+func (c *Config) IsDefaultsExcluded() bool {
+	return c.SkipDefault
+}
+
+func (c *Config) ProcessCLI(cmd *cobra.Command, v *viper.Viper) error {
+	if err := ProcessCLI(cmd, v, c.Data, c.loadPrefix()...); err != nil {
 		return failure.Wrap(err, "ProcessCLI failed")
 	}
 
 	return nil
 }
 
-func (c *Config) ProcessEnv(prefix ...string) error {
-	if err := ProcessEnv(c.Data, prefix...); err != nil {
+func (c *Config) ProcessEnv() error {
+	if err := ProcessEnv(c.Data, c.loadPrefix()...); err != nil {
 		return failure.Wrap(err, "ProcessEnv failed")
 	}
 
 	return nil
 }
 
-func (c *Config) ProcessParamStore(pstore ssmiface.SSMAPI, appTitle string, isEncrypted bool, prefix ...string) (map[string]string, error) {
-	result, err := ProcessParamStore(pstore, appTitle, isEncrypted, c.Data, prefix...)
+func (c *Config) CollectParamsFromEnv(appTitle string) (map[string]string, error) {
+	result, err := CollectParamsFromEnv(appTitle, c.Data, c.SkipDefault, c.loadPrefix()...)
 	if err != nil {
-		return nil, failure.Wrap(err, "ProcessParamStore failed")
+		return nil, failure.Wrap(err, "CollectParamsFromEnv failed")
 	}
 
 	return result, nil
 }
 
-func (c *Config) CollectParamStoreFromEnv(appTitle string, prefix ...string) (map[string]string, error) {
-	result, err := CollectParamStoreFromEnv(appTitle, c.Data, prefix...)
-	if err != nil {
-		return nil, failure.Wrap(err, "CollectParamStoreFromEnv failed")
-	}
-
-	return result, nil
-}
-
-func (c *Config) EnvNames(prefix ...string) ([]string, error) {
-	name, err := EnvNames(c.Data, prefix...)
+func (c *Config) ParamNames(appTitle string) ([]string, error) {
+	name, err := ParamNames(appTitle, c.Data, c.IsDefaultsExcluded(), c.loadPrefix()...)
 	if err != nil {
 		return nil, failure.Wrap(err, "EnvNames failed")
 	}
@@ -85,8 +115,17 @@ func (c *Config) EnvNames(prefix ...string) ([]string, error) {
 	return name, nil
 }
 
-func (c *Config) EnvToMap(prefix ...string) (map[string]string, error) {
-	result, err := EnvToMap(c.Data, prefix...)
+func (c *Config) EnvNames() ([]string, error) {
+	name, err := EnvNames(c.Data, c.loadPrefix()...)
+	if err != nil {
+		return nil, failure.Wrap(err, "EnvNames failed")
+	}
+
+	return name, nil
+}
+
+func (c *Config) EnvToMap() (map[string]string, error) {
+	result, err := EnvToMap(c.Data, c.loadPrefix()...)
 	if err != nil {
 		return nil, failure.Wrap(err, "EnvToMap failed")
 	}
@@ -94,8 +133,8 @@ func (c *Config) EnvToMap(prefix ...string) (map[string]string, error) {
 	return result, nil
 }
 
-func (c *Config) EnvReport(prefix ...string) (map[string]string, error) {
-	result, err := EnvReport(c.Data, prefix...)
+func (c *Config) EnvReport() (map[string]string, error) {
+	result, err := EnvReport(c.Data, c.loadPrefix()...)
 	if err != nil {
 		return nil, failure.Wrap(err, "Report failed")
 	}
@@ -148,7 +187,8 @@ func BindCLI(cmd *cobra.Command, v *viper.Viper, spec interface{}, prefix ...str
 
 		lookupFlag := flagSet.Lookup(flag)
 		flagID := field.BindName()
-		if err := v.BindPFlag(flagID, lookupFlag); err != nil {
+
+		if err = v.BindPFlag(flagID, lookupFlag); err != nil {
 			return failure.ToSystem(err, "v.BindPFlag failed for (%s)", flag)
 		}
 	}
@@ -156,52 +196,89 @@ func BindCLI(cmd *cobra.Command, v *viper.Viper, spec interface{}, prefix ...str
 	return nil
 }
 
-func ProcessCLI(v *viper.Viper, spec interface{}, prefix ...string) error {
+func ProcessCLI(cmd *cobra.Command, v *viper.Viper, spec interface{}, prefix ...string) error {
 	fields, err := Fields(spec, prefix...)
 	if err != nil {
 		return failure.Wrap(err, "Fields failed")
 	}
 
+	var failed *failure.Multi
 	for _, field := range fields {
+		var value string
 		env := field.EnvVariable()
 		flag := field.CLIFlag()
 		flagID := field.BindName()
-		value := v.GetString(flagID)
 
-		if value == "" {
-			if v.InConfig(flagID) {
-				data := v.Get(flagID)
-				switch d := data.(type) {
-				case map[string]interface{}:
-					for k, v := range d {
-						value += fmt.Sprintf("%s:%s,", k, v)
-					}
-					value = strings.TrimRight(value, ",")
+		f := cmd.Flags().Lookup(flag)
+		// CLI flag has the highest priority
+		if flag != "" && f != nil && f.Value.String() != "" && f.Changed {
+			value = f.Value.String()
+
+		} else if env != "" {
+			var ok bool
+			if env != "-" {
+				// Env is the 2nd highest priority
+				value, ok = os.LookupEnv(env)
+
+				if !ok {
+					value, _ = fromViper(v, flagID)
 				}
 			} else {
-				value = EnvVarOptional(env)
+				// Env is ignored, but we still need to check inside a config file
+				value, _ = fromViper(v, flagID)
 			}
 		}
 
 		// This will not happen if you use BindCLI because the default value is
 		// always set. It is here just in case you are doing things manually
-		if value == "" && field.IsDefault() {
-			value = field.DefaultValue()
-		}
-
-		if value == "" && !field.IsDefault() {
-			if field.IsRequired() {
-				return failure.Config("required key (field:%s,env:%s,cmds:%s) missing value", field.Name, env, flag)
+		if value == "" {
+			if field.IsDefault() {
+				value = field.DefaultValue()
+			} else {
+				if field.IsRequired() {
+					failed = failure.Append(failed, failure.Config("required key (field:%s,env:%s,cli:%s) missing value", field.Name, env, flag))
+					continue
+				}
 			}
-			continue
 		}
 
 		if err = ProcessField(value, field.ReflectValue); err != nil {
-			return failure.Wrap(err, "ProcessField failed (%s)", field.Name)
+			err = failure.Wrap(err, "ProcessField failed (%s)", field.Name)
+			failed = failure.Append(failed, err)
+			continue
 		}
 	}
 
-	return nil
+	return failed.ErrorOrNil()
+}
+
+func fromViper(v *viper.Viper, flagID string) (string, bool) {
+	var value string
+	var found bool
+
+	if v.InConfig(flagID) {
+		found = true
+		data := v.Get(flagID)
+		switch d := data.(type) {
+		case map[string]interface{}:
+			for k, v := range d {
+				value += fmt.Sprintf("%s:%s,", k, v)
+			}
+			value = strings.TrimRight(value, ",")
+		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+			value = fmt.Sprintf("%d", d)
+		case float32, float64:
+			value = fmt.Sprintf("%f", d)
+		case string:
+			value = fmt.Sprintf("%s", d)
+		case bool:
+			value = fmt.Sprintf("%t", d)
+		default:
+			value = fmt.Sprintf("%v", d)
+		}
+	}
+
+	return value, found
 }
 
 func ProcessEnv(spec interface{}, prefix ...string) error {
@@ -236,71 +313,6 @@ func ProcessEnv(spec interface{}, prefix ...string) error {
 	return nil
 }
 
-func ProcessParamStore(pstore ssmiface.SSMAPI, appTitle string, isEncrypted bool, spec interface{}, prefix ...string) (map[string]string, error) {
-	if pstore == nil {
-		return nil, failure.System("pstore is nil")
-	}
-
-	if appTitle == "" {
-		return nil, failure.System("appTitle is empty")
-	}
-
-	fields, err := Fields(spec, prefix...)
-	if err != nil {
-		return nil, failure.Wrap(err, "Fields failed")
-	}
-
-	result := map[string]string{}
-
-OUTER:
-	for _, field := range fields {
-		env := field.EnvVariable()
-		pkey := field.ParamStoreKey()
-
-		if env == "-" || pkey == "-" {
-			continue
-		}
-
-		if env == "" {
-			return result, failure.System("env: is required but empty for (%s)", field.Name)
-		}
-
-		for _, ev := range excludedVars {
-			if env == ev {
-				continue OUTER
-			}
-		}
-
-		key := PStoreKey(field, appTitle, env)
-		in := ssm.GetParameterInput{
-			Name:           aws.String(key),
-			WithDecryption: aws.Bool(isEncrypted),
-		}
-
-		if field.IsDefault() {
-			continue
-		}
-
-		out, err := pstore.GetParameter(&in)
-		if err != nil {
-			return result, failure.ToSystem(err, "pstore.API.GetParameter failed for (%s, %s)", field.Name, key)
-		}
-
-		if out == nil || out.Parameter == nil {
-			return result, failure.System("pstore.API.GetParameter returned nil (%s, %s)", field.Name, key)
-		}
-
-		var value string
-		if out.Parameter.Value != nil {
-			value = *out.Parameter.Value
-		}
-
-		result[env] = value
-	}
-
-	return result, nil
-}
-
 func PStoreKey(field Field, appTitle, env string) string {
 	var key string
 	pkey := field.ParamStoreKey()
@@ -316,7 +328,7 @@ func PStoreKey(field Field, appTitle, env string) string {
 	return key
 }
 
-func CollectParamStoreFromEnv(appTitle string, spec interface{}, prefix ...string) (map[string]string, error) {
+func CollectParamsFromEnv(appTitle string, spec interface{}, skipDefaults bool, prefix ...string) (map[string]string, error) {
 	if appTitle == "" {
 		return nil, failure.System("appTitle is empty")
 	}
@@ -331,9 +343,9 @@ func CollectParamStoreFromEnv(appTitle string, spec interface{}, prefix ...strin
 OUTER:
 	for _, field := range fields {
 		env := field.EnvVariable()
-		pkey := field.ParamStoreKey()
+		key := PStoreKey(field, appTitle, env)
 
-		if env == "-" || pkey == "-" {
+		if env == "-" || key == "-" {
 			continue
 		}
 
@@ -347,23 +359,76 @@ OUTER:
 			}
 		}
 
-		key := fmt.Sprintf("/%s/%s", appTitle, env)
-		if pkey != "" {
-			key = field.ParamStoreKey()
-		}
-
 		value, ok := os.LookupEnv(env)
-		if !ok && field.IsDefault() {
-			value = field.DefaultValue()
-		}
-
-		if !ok && !field.IsDefault() {
-			if field.IsRequired() {
+		if !ok {
+			if field.IsDefault() {
+				if skipDefaults {
+					continue
+				}
+				value = field.DefaultValue()
+			} else if field.IsRequired() {
 				return result, failure.Config("required key (%s,%s) missing value", field.Name, env)
 			}
 		}
 
 		result[key] = value
+	}
+
+	return result, nil
+}
+
+func ParamEnvField(appTitle, env string, field Field) (string, string, error) {
+	key := PStoreKey(field, appTitle, env)
+	value, ok := os.LookupEnv(env)
+	if !ok && field.IsDefault() {
+		value = field.DefaultValue()
+	}
+
+	if !ok && !field.IsDefault() {
+		if field.IsRequired() {
+			return key, value, failure.Config("required key (%s,%s) missing value", field.Name, env)
+		}
+	}
+
+	return key, value, nil
+}
+
+func ParamNames(appTitle string, spec interface{}, skipDefaults bool, prefix ...string) ([]string, error) {
+	if appTitle == "" {
+		return nil, failure.System("appTitle is empty")
+	}
+
+	fields, err := Fields(spec, prefix...)
+	if err != nil {
+		return nil, failure.Wrap(err, "Fields failed")
+	}
+
+	var result []string
+
+OUTER:
+	for _, field := range fields {
+		env := field.EnvVariable()
+		key := PStoreKey(field, appTitle, env)
+
+		if env == "-" || key == "-" {
+			continue
+		}
+
+		if env == "" {
+			return result, failure.System("env: is required but empty for (%s)", field.Name)
+		}
+
+		for _, ev := range excludedVars {
+			if env == ev {
+				continue OUTER
+			}
+		}
+
+		if skipDefaults && field.IsDefault() {
+			continue
+		}
+
+		result = append(result, key)
 	}
 
 	return result, nil
@@ -447,6 +512,32 @@ OUTER:
 	return result, nil
 }
 
+func EnvNamesNoDefaults(spec interface{}, prefix ...string) ([]string, error) {
+	var names []string
+
+	fields, err := Fields(spec, prefix...)
+	if err != nil {
+		return nil, failure.Wrap(err, "Fields failed")
+	}
+
+OUTER:
+	for _, field := range fields {
+		env := field.EnvVariable()
+		if env == "-" || field.IsDefault() {
+			continue
+		}
+
+		for _, ev := range excludedVars {
+			if env == ev {
+				continue OUTER
+			}
+		}
+		names = append(names, env)
+	}
+
+	return names, nil
+}
+
 func EnvNames(spec interface{}, prefix ...string) ([]string, error) {
 	var names []string
 
@@ -478,7 +569,7 @@ OUTER:
 func EnvVar(key string) (string, error) {
 	value, ok := os.LookupEnv(key)
 	if !ok {
-		return value, failure.Config("env var (%s) is not set", key)
+		return value, failure.NotFound("env var (%s) is not set", key)
 	}
 
 	return value, nil

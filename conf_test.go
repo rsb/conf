@@ -4,8 +4,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/service/ssm"
-	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
 	"github.com/rsb/conf"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -355,16 +353,18 @@ func TestProcessCLI_SimpleFieldSuccess(t *testing.T) {
 	expectedValue := "foobar"
 	cmd := &cobra.Command{
 		Use: "my-cmd",
-		RunE: func(_ *cobra.Command, args []string) error {
-			v := viper.GetViper()
-			var config MyConfig
-
-			err := conf.ProcessCLI(v, &config)
-			require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
-			assert.Equal(t, expectedValue, config.Field)
-			return nil
-		},
 	}
+
+	runFn := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
+		assert.Equal(t, expectedValue, config.Field)
+		return nil
+	}
+	cmd.RunE = runFn
 
 	v := viper.GetViper()
 	var config MyConfig
@@ -378,22 +378,24 @@ func TestProcessCLI_SimpleFieldSuccess(t *testing.T) {
 
 func TestProcessCLI_SimpleFieldDefaultValue(t *testing.T) {
 	type MyConfig struct {
-		Field string `conf:"env:MY_FIELD,default:abc,cmds:my-field,cmds-s:f,cmds-u:some field usage"`
+		Field string `conf:"env:MY_FIELD,default:abc,cli:my-field,cli-s:f,cli-u:some field usage"`
 	}
 
 	expectedValue := "abc"
 	cmd := &cobra.Command{
 		Use: "my-cmd",
-		RunE: func(_ *cobra.Command, args []string) error {
-			v := viper.GetViper()
-			var config MyConfig
-
-			err := conf.ProcessCLI(v, &config)
-			require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
-			assert.Equal(t, expectedValue, config.Field)
-			return nil
-		},
 	}
+
+	runFn := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
+		assert.Equal(t, expectedValue, config.Field)
+		return nil
+	}
+	cmd.RunE = runFn
 
 	v := viper.GetViper()
 	var config MyConfig
@@ -412,16 +414,18 @@ func TestProcessCLI_SimpleFieldENVDefaultValue(t *testing.T) {
 	expectedValue := "abc"
 	cmd := &cobra.Command{
 		Use: "my-cmd",
-		RunE: func(_ *cobra.Command, args []string) error {
-			v := viper.GetViper()
-			var config MyConfig
-
-			err := conf.ProcessCLI(v, &config)
-			require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
-			assert.Equal(t, expectedValue, config.Field)
-			return nil
-		},
 	}
+
+	runFn := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
+		assert.Equal(t, expectedValue, config.Field)
+		return nil
+	}
+	cmd.RunE = runFn
 
 	v := viper.GetViper()
 	var config MyConfig
@@ -440,16 +444,17 @@ func TestProcessCLI_SimpleFieldsSuccess(t *testing.T) {
 	expectedValue := 999
 	cmd := &cobra.Command{
 		Use: "my-cmd",
-		RunE: func(_ *cobra.Command, args []string) error {
-			v := viper.GetViper()
-			var config MyConfig
-
-			err := conf.ProcessCLI(v, &config)
-			require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
-			assert.Equal(t, expectedValue, config.Field)
-			return nil
-		},
 	}
+	runFn := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
+		assert.Equal(t, expectedValue, config.Field)
+		return nil
+	}
+	cmd.RunE = runFn
 
 	var config MyConfig
 
@@ -466,7 +471,8 @@ func TestProcessCLI_FieldsFailure(t *testing.T) {
 	var config InvalidConfigTagParse
 
 	v := viper.GetViper()
-	err := conf.ProcessCLI(v, &config)
+	cmd := &cobra.Command{}
+	err := conf.ProcessCLI(cmd, v, &config)
 	require.Error(t, err, "conf.ProcessCLI is expected to fail")
 	assert.Contains(t, err.Error(), "Fields failed: parseTag failed (Value)")
 }
@@ -478,16 +484,17 @@ func TestProcessCLI_RequiredFieldFailure(t *testing.T) {
 
 	cmd := &cobra.Command{
 		Use: "my-cmd",
-		RunE: func(_ *cobra.Command, args []string) error {
-			v := viper.GetViper()
-			var config MyConfig
-
-			err := conf.ProcessCLI(v, &config)
-			require.Error(t, err, "conf.ProcessCLI is expected to fail")
-			assert.Contains(t, err.Error(), "required key (field:Field,env:MY_FIELD,cmds:my-field) missing value")
-			return nil
-		},
 	}
+	runFn := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.Error(t, err, "conf.ProcessCLI is expected to fail")
+		assert.Contains(t, err.Error(), "required key (field:Field,env:MY_FIELD,cli:my-field) missing value")
+		return nil
+	}
+	cmd.RunE = runFn
 
 	v := viper.GetViper()
 	var config MyConfig
@@ -501,21 +508,109 @@ func TestProcessCLI_RequiredFieldFailure(t *testing.T) {
 
 func TestProcessCLI_NoValueNoDefaultNotRequired(t *testing.T) {
 	type MyConfig struct {
-		Field int `conf:"env:MY_FIELD,cmds:my-field,cmds-s:v,cmds-u:some usage"`
+		Field int `conf:"env:MY_FIELD,cli:my-field,cli-s:v,cli-u:some usage"`
 	}
 
 	cmd := &cobra.Command{
 		Use: "my-cmd",
-		RunE: func(_ *cobra.Command, args []string) error {
-			v := viper.GetViper()
-			var config MyConfig
-
-			err := conf.ProcessCLI(v, &config)
-			require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
-			assert.Equal(t, 0, config.Field)
-			return nil
-		},
 	}
+	runE := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
+		assert.Equal(t, 0, config.Field)
+		return nil
+	}
+	cmd.RunE = runE
+
+	v := viper.GetViper()
+	var config MyConfig
+
+	err := conf.BindCLI(cmd, v, &config)
+	require.NoError(t, err, "conf.BindCLI is not expected to fail")
+
+	err = cmd.Execute()
+	require.NoError(t, err, "cmd.Execute is not expected to fail")
+}
+
+func TestProcessCLI_NoValueNoDefaultNotRequiredUint(t *testing.T) {
+	type MyConfig struct {
+		Field uint `conf:"env:MY_FIELD,cli:my-field,cli-s:v,cli-u:some usage"`
+	}
+
+	cmd := &cobra.Command{
+		Use: "my-cmd",
+	}
+	runE := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
+		assert.Equal(t, uint(0), config.Field)
+		return nil
+	}
+	cmd.RunE = runE
+
+	v := viper.GetViper()
+	var config MyConfig
+
+	err := conf.BindCLI(cmd, v, &config)
+	require.NoError(t, err, "conf.BindCLI is not expected to fail")
+
+	err = cmd.Execute()
+	require.NoError(t, err, "cmd.Execute is not expected to fail")
+}
+
+func TestProcessCLI_NoValueNoDefaultNotRequiredFloat(t *testing.T) {
+	type MyConfig struct {
+		Field float64 `conf:"env:MY_FIELD,cli:my-field,cli-s:v,cli-u:some usage"`
+	}
+
+	cmd := &cobra.Command{
+		Use: "my-cmd",
+	}
+	runE := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
+		assert.Equal(t, float64(0), config.Field)
+		return nil
+	}
+	cmd.RunE = runE
+
+	v := viper.GetViper()
+	var config MyConfig
+
+	err := conf.BindCLI(cmd, v, &config)
+	require.NoError(t, err, "conf.BindCLI is not expected to fail")
+
+	err = cmd.Execute()
+	require.NoError(t, err, "cmd.Execute is not expected to fail")
+}
+
+func TestProcessCLI_NoValueNoDefaultNotRequiredBool(t *testing.T) {
+	type MyConfig struct {
+		Field bool `conf:"env:MY_FIELD,cli:my-field,cli-s:v,cli-u:some usage"`
+	}
+
+	cmd := &cobra.Command{
+		Use: "my-cmd",
+	}
+	runE := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.NoError(t, err, "conf.ProcessCLI is not expected to fail")
+		assert.Equal(t, false, config.Field)
+		return nil
+	}
+	cmd.RunE = runE
 
 	v := viper.GetViper()
 	var config MyConfig
@@ -529,21 +624,23 @@ func TestProcessCLI_NoValueNoDefaultNotRequired(t *testing.T) {
 
 func TestProcessCLI_ProcessFieldFailure(t *testing.T) {
 	type MyConfig struct {
-		Field int `conf:"env:MY_FIELD,cmds:my-field,cmds-s:v,cmds-u:some usage"`
+		Field int `conf:"env:MY_FIELD,cli:my-field,cli-s:v,cmds-u:some usage"`
 	}
 
 	cmd := &cobra.Command{
 		Use: "my-cmd",
-		RunE: func(_ *cobra.Command, args []string) error {
-			v := viper.GetViper()
-			var config MyConfig
-
-			err := conf.ProcessCLI(v, &config)
-			require.Error(t, err, "conf.ProcessCLI is expected to fail")
-			assert.Contains(t, err.Error(), "ProcessField failed (Field)")
-			return nil
-		},
 	}
+
+	runFn := func(_ *cobra.Command, args []string) error {
+		v := viper.GetViper()
+		var config MyConfig
+
+		err := conf.ProcessCLI(cmd, v, &config)
+		require.Error(t, err, "conf.ProcessCLI is expected to fail")
+		assert.Contains(t, err.Error(), "ProcessField failed (Field)")
+		return nil
+	}
+	cmd.RunE = runFn
 
 	setenv(t, "MY_FIELD", "abc")
 	v := viper.GetViper()
@@ -666,201 +763,4 @@ func TestEnvToMap_RequiredFailure(t *testing.T) {
 	require.Error(t, err, "conf.EnvToMap is expected to fail")
 
 	assert.Contains(t, err.Error(), "required key (FieldB,FIELD_B) missing value")
-}
-
-func TestProcessParamStore_NoAPI_Failure(t *testing.T) {
-	type Config struct {
-		FieldA string
-	}
-
-	var config Config
-
-	_, err := conf.ProcessParamStore(nil, "some_title", false, &config)
-	require.Error(t, err, "conf.ProcessParamStore is expected to fail")
-	assert.Contains(t, err.Error(), "pstore is nil")
-}
-
-//
-// func TestProcessParamStore_NoAppTitle_Failure(t *testing.T) {
-// 	type Config struct {
-// 		FieldA string
-// 	}
-//
-// 	var config Config
-//
-// 	sess, err := session.NewSession()
-// 	require.NoError(t, err)
-//
-// 	store := conf.PStore{
-// 		API: ssm.New(sess),
-// 	}
-// 	_, err = conf.ProcessParamStore(store, &config)
-// 	require.Error(t, err, "conf.ProcessParamStore is expected to fail")
-// 	assert.Contains(t, err.Error(), "pstore.AppTitle is empty")
-// }
-//
-// func TestProcessParamStore_Fields_Failure(t *testing.T) {
-// 	type Config struct {
-// 		FieldA bool `conf:"env:,default:xyz"`
-// 	}
-//
-// 	var config Config
-//
-// 	sess, err := session.NewSession()
-// 	require.NoError(t, err)
-//
-// 	store := conf.PStore{
-// 		API:      ssm.New(sess),
-// 		AppTitle: "Foo",
-// 	}
-//
-// 	_, err = conf.ProcessParamStore(store, &config)
-// 	require.Error(t, err, "conf.ProcessParamStore is expected to fail")
-// 	assert.Contains(t, err.Error(), "Fields failed: parseTag failed (FieldA)")
-// }
-//
-// func TestProcessParamStore_EnvIsEmpty_Failure(t *testing.T) {
-// 	type Config struct {
-// 		FieldY string `conf:"-"`
-// 		FieldZ string `conf:"pstore:-"`
-// 		FieldX string `conf:"env:-"`
-// 		FieldA bool   `conf:"default:xyz"`
-// 	}
-//
-// 	var config Config
-//
-// 	sess, err := session.NewSession()
-// 	require.NoError(t, err)
-//
-// 	store := conf.PStore{
-// 		API:      ssm.New(sess),
-// 		AppTitle: "Foo",
-// 	}
-//
-// 	_, err = conf.ProcessParamStore(store, &config)
-// 	require.Error(t, err, "conf.ProcessParamStore is expected to fail")
-// 	assert.Contains(t, err.Error(), "env: is required but empty for (FieldA)")
-// }
-//
-// func TestProcessParamStore_APIGetParameter_Failure(t *testing.T) {
-// 	type Config struct {
-// 		FieldA bool `conf:"env:Foo, default:xyz"`
-// 	}
-//
-// 	var config Config
-//
-// 	store := conf.PStore{
-// 		API: &MockSSM{
-// 			GetParamError: errors.New("some api error"),
-// 		},
-// 		AppTitle: "MyService",
-// 	}
-//
-// 	_, err := conf.ProcessParamStore(store, &config)
-// 	require.Error(t, err, "conf.ProcessParamStore is expected to fail")
-// 	assert.Contains(t, err.Error(), "pstore.API.GetParameter failed for (FieldA, /MyService/Foo)")
-// }
-//
-// // This should never happen in reality
-// func TestProcessParamStore_APIGetParameterReturnsNil_Failure(t *testing.T) {
-// 	type Config struct {
-// 		FieldA bool `conf:"env:Foo, pstore:STORE_FIELD, default:xyz"`
-// 	}
-//
-// 	var config Config
-//
-// 	store := conf.PStore{
-// 		API:      &MockSSM{},
-// 		AppTitle: "MyService",
-// 	}
-//
-// 	_, err := conf.ProcessParamStore(store, &config)
-// 	require.Error(t, err, "conf.ProcessParamStore is expected to fail")
-// 	assert.Contains(t, err.Error(), "pstore.API.GetParameter returned nil (FieldA, STORE_FIELD)")
-// }
-//
-// func TestProcessParamStore_Required_Failure(t *testing.T) {
-// 	type Config struct {
-// 		FieldA bool `conf:"env:Foo, pstore:STORE_FIELD, required"`
-// 	}
-//
-// 	var config Config
-//
-// 	store := conf.PStore{
-// 		API: &MockSSM{
-// 			GetParamResponse: &ssm.GetParameterOutput{
-// 				Parameter: &ssm.Parameter{},
-// 			},
-// 		},
-// 		AppTitle: "MyService",
-// 	}
-//
-// 	_, err := conf.ProcessParamStore(store, &config)
-// 	require.Error(t, err, "conf.ProcessParamStore is expected to fail")
-// 	assert.Contains(t, err.Error(), "required key (FieldA,STORE_FIELD) missing value")
-// }
-//
-// func TestProcessParamStore_Success(t *testing.T) {
-// 	type Config struct {
-// 		FieldA bool `conf:"env:Foo, pstore:STORE_FIELD, required"`
-// 	}
-//
-// 	var config Config
-//
-// 	pstoreValue := "MyValue"
-// 	store := conf.PStore{
-// 		API: &MockSSM{
-// 			GetParamResponse: &ssm.GetParameterOutput{
-// 				Parameter: &ssm.Parameter{
-// 					Value: aws.String(pstoreValue),
-// 				},
-// 			},
-// 		},
-// 		AppTitle: "MyService",
-// 	}
-//
-// 	result, err := conf.ProcessParamStore(store, &config)
-// 	require.NoError(t, err, "conf.ProcessParamStore is not expected to fail")
-// 	require.NotNil(t, result)
-//
-// 	expected, ok := result["Foo"]
-//
-// 	require.True(t, ok)
-// 	assert.Equal(t, pstoreValue, expected)
-// }
-//
-// func TestProcessParamStore_DefaultValue_Success(t *testing.T) {
-// 	type Config struct {
-// 		FieldA bool `conf:"env:Foo, pstore:STORE_FIELD, default:MyDefault"`
-// 	}
-//
-// 	var config Config
-//
-// 	store := conf.PStore{
-// 		API: &MockSSM{
-// 			GetParamResponse: &ssm.GetParameterOutput{
-// 				Parameter: &ssm.Parameter{},
-// 			},
-// 		},
-// 		AppTitle: "MyService",
-// 	}
-//
-// 	result, err := conf.ProcessParamStore(store, &config)
-// 	require.NoError(t, err, "conf.ProcessParamStore is not expected to fail")
-// 	require.NotNil(t, result)
-//
-// 	expected, ok := result["Foo"]
-//
-// 	require.True(t, ok)
-// 	assert.Equal(t, "MyDefault", expected)
-// }
-
-type MockSSM struct {
-	ssmiface.SSMAPI
-	GetParamResponse *ssm.GetParameterOutput
-	GetParamError    error
-}
-
-func (m *MockSSM) GetParameter(_ *ssm.GetParameterInput) (*ssm.GetParameterOutput, error) {
-	return m.GetParamResponse, m.GetParamError
 }

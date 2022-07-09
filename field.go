@@ -3,7 +3,6 @@ package conf
 import (
 	"encoding"
 	"fmt"
-	"math/rand"
 	"reflect"
 	"strconv"
 	"strings"
@@ -12,14 +11,8 @@ import (
 	"github.com/rsb/failure"
 )
 
-const charset = "abcdefghijklmnopqrstuvwxyz" +
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-const FieldIDLength = 6
-
 var (
-	InvalidSpecFailure            = failure.Config("specification must be a struct pointer")
-	seededRand         *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+	InvalidSpecFailure = failure.Config("specification must be a struct pointer")
 )
 
 // Field holds information about the current configuration variable
@@ -43,7 +36,7 @@ func (f Field) EnvVariable() string {
 		return f.EnvVar
 	}
 
-	if f.Prefix != "" {
+	if f.Prefix != "" && f.EnvVar != "" {
 		return fmt.Sprintf("%s_%s", f.Prefix, f.EnvVar)
 	}
 
@@ -233,6 +226,9 @@ func ProcessField(value string, field reflect.Value) error {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		var val int64
 		var err error
+		if value == "" {
+			value = "0"
+		}
 		if field.Kind() == reflect.Int64 && typ.PkgPath() == "time" && typ.Name() == "Duration" {
 
 			var d time.Duration
@@ -249,6 +245,9 @@ func ProcessField(value string, field reflect.Value) error {
 		}
 		field.SetInt(val)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if value == "" {
+			value = "0"
+		}
 		val, err := strconv.ParseUint(value, 0, typ.Bits())
 		if err != nil {
 			return failure.ToSystem(err, "strconv.ParseUint failed")
@@ -256,6 +255,10 @@ func ProcessField(value string, field reflect.Value) error {
 		field.SetUint(val)
 
 	case reflect.Bool:
+		if value == "" {
+			value = "false"
+		}
+
 		val, err := strconv.ParseBool(value)
 		if err != nil {
 			return failure.ToSystem(err, "strconv.ParseBool failed")
@@ -263,6 +266,9 @@ func ProcessField(value string, field reflect.Value) error {
 		field.SetBool(val)
 
 	case reflect.Float64, reflect.Float32:
+		if value == "" {
+			value = "0.0"
+		}
 		val, err := strconv.ParseFloat(value, typ.Bits())
 		if err != nil {
 			return failure.ToSystem(err, "strconv.ParseFloat failed")
